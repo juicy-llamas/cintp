@@ -20,4 +20,4 @@ You can only specify at most three program options as arguments, and the first a
 - help: opens help
 
 ## Other notes
-- If you have a file called itmp.c in your current directory when you open the program, it will prompt you to recover the file or truncate it. Since the program will use itmp.c, you must choose one option.
+- If you have a file called itmp.c in your current directory when you open the program, it will prompt you to recover the file or truncate it. Since the program will use itmp.c, you must choose one of these options (or just quit).
