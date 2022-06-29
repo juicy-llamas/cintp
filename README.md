@@ -1,6 +1,6 @@
 # C 'Interpreter'
 I call it an intepreter to highlight how (hopefully) easy it will be to use. \
-NOTE: in development, and it is...barely functional in it's current state. Do not use!
+NOTE: very tempermental and in development, and while it perhaps could technically function in it's current state, do not use it!
 
 ## Install
 To create the binary, run `gcc -O2 c-interpreter-two.c -o cintp`. \
