@@ -9,7 +9,7 @@ Then you can put the binary in `/usr/bin` or `/opt` or something, or create a `~
 ## Use
 Pressing enter upon running the application will throw you in a sort of text editor environment. There, you can just type C code, and when you're done, you can press `Ctrl+D` (`EOF`). After that, the code will be compiled and ran, and you can see the output. After you're done staring at the output, you can choose to edit the existing file (`Ctrl+E`), truncate the file and edit a new one (`Ctrl+D`), or quit (`Ctrl+Q`). It should be that simple.\
 \
-To this end, the program will create two files in your directory: itmp.c and otmp, the first being where your code goes and the second being the output executable. The output is never saved (don't see a reason to, but easy enough to add), but you can save the input by specifying an option below.
+To this end, the program will create two files in your directory: itmp.c and otmp, the first being where your code goes and the second being the output executable. The output is never saved (don't see a reason to, easy enough to add though), but you can save the input by specifying an option below.
 
 #### Options 
 You can only specify at most three program options as arguments, and the first argument that isn't a program option will be treated as the start of arguments to gcc.
