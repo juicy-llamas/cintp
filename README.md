@@ -1,5 +1,5 @@
 # C 'Interpreter'
-I call it an intepreter to highlight how (hopefully) easy it will be to use. \
+I call it an intepreter to highlight how (hopefully) easy it will be to use.
 #### NOTE: This program is in development and very tempermental, and while it perhaps could technically function in it's current state, do not use it!
 
 ## Install
