@@ -14,7 +14,7 @@ To this end, the program will create two files in your directory: itmp.c and otm
 #### Options 
 You can only specify at most three program options as arguments, and the first argument that isn't a program option will be treated as the start of arguments to gcc.
 - `sav`: when you press `Ctrl+Q`, your code will be saved (in itmp.c) rather than deleted, as it usually is.
-- `ndef`: start with a blank file rather than a template
+- `ndef`: start with a blank file rather than the default template
 - `bench`: start with the benching template
 - `temp` \[file name\]: use the file as your template
 - `help`: opens help
