@@ -9,7 +9,7 @@ Then you can put the binary in `/usr/bin` or `/opt` or something, or create a `~
 ## Use
 Pressing enter upon running the application will throw you in a sort of text editor environment. There, you can just type C code, and when you're done, you can press Ctrl+D (EOF). After that, the code will be compiled and ran, and you can see the output. After you're done staring at the output, you can choose to edit the existing file (Ctrl+E), truncate the file and edit a new one (Ctrl+D), or quit (Ctrl+Q). It should be that simple.
 
-### Options 
+#### Options 
 You can only specify at most three program options as arguments, and the first argument that isn't a program option will be treated as the start of arguments to GCC.
 - sav: when you press Ctrl+Q, your code (in itmp.c) will be saved rather than deleted, as it usually is.
 - ndef: start with a blank file rather than a template
