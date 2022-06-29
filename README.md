@@ -7,7 +7,8 @@ To create the binary, run `gcc -O2 c-interpreter-two.c -o cintp`. \
 Then you can put the binary in `/usr/bin` or `/opt` or something, or create a `~/local/bin` and add that to your PATH for user executables.
 
 ## Use
-Pressing enter upon running the application will throw you in a sort of text editor environment. There, you can just type C code, and when you're done, you can press Ctrl+D (EOF). After that, the code will be compiled and ran, and you can see the output. After you're done staring at the output, you can choose to edit the existing file (Ctrl+E), truncate the file and edit a new one (Ctrl+D), or quit (Ctrl+Q). It should be that simple. \ \
+Pressing enter upon running the application will throw you in a sort of text editor environment. There, you can just type C code, and when you're done, you can press Ctrl+D (EOF). After that, the code will be compiled and ran, and you can see the output. After you're done staring at the output, you can choose to edit the existing file (Ctrl+E), truncate the file and edit a new one (Ctrl+D), or quit (Ctrl+Q). It should be that simple.\
+\
 To this end, the program will create two files in your directory: itmp.c and otmp, the first being where your code goes and the second being the output executable. The output is never saved (don't see a reason to, but easy enough to add), but you can save the input by specifying an option below.
 
 #### Options 
