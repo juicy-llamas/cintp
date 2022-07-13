@@ -17,12 +17,13 @@
 #include <time.h>
 // stat
 #include <sys/stat.h>
+// uints
+#include <stdint.h>
 
 #define inam "./itmp.c"
 #define onam "./omtp"
 // How long do we wait for GCC to do its thing?
 #define TIMEOUT 3
-#define BLOCK_S 4096
 
 #define LOG( fmt, ... ) 											\
 printf( "LOG (file %s, line %i): " fmt "\n",						\
@@ -44,9 +45,46 @@ printf( "LOG (file %s, line %i): " fmt "\n",						\
 	abort();														\
 })
 
+// stub that wraps realloc
+#define RREALLOC( ptr, sz, nsz ) ({									\
+	printf( "RREALLOC: line = %i, sz = %i, nsz = %i\n", __LINE__, sz, nsz ); \
+	sz = nsz;														\
+	if ( !( ptr = realloc( ptr, sz ) ) )							\
+		ERR_QUIT( "mem broke" );									\
+})
+
+#define MMALLOC( ptr, sz, nsz ) ({									\
+	printf( "MMALLOC: line = %i, sz = %i, nsz = %i\n", __LINE__, sz, nsz ); \
+	sz = nsz;														\
+	if ( !( ptr = realloc( ptr, sz ) ) )							\
+		ERR_QUIT( "mem broke" );									\
+})
+
+struct lin {
+	char* line;
+	uint32_t size;
+	uint32_t chramt;
+} __attribute__((__packed__));
+
+#define LIN_S sizeof( struct lin )
+#define LINE_S 64
+
 int save_code = 0;
 FILE* itmp = 0;
 struct termios defaults;
+
+unsigned int lptrbuf_s = 32;
+struct lin* lptrbuf = 0;
+
+void free_lptrbuf () {
+	if ( lptrbuf ) {
+		for ( unsigned int i = 0; i < lptrbuf_s / sizeof( struct lin ); i++ ) {
+			if ( lptrbuf[ i ].line )
+				free( lptrbuf[ i ].line );
+		}
+		free( lptrbuf );
+	}
+}
 
 // sig handler deletes the generated files if you exit with SIGINT, as well as closes the fd
 void cleanup () {
@@ -56,12 +94,37 @@ void cleanup () {
 		unlink( inam );
 	unlink( onam );
 	tcsetattr( STDOUT_FILENO, TCSANOW, &defaults );
+
+	free_lptrbuf();
+
 	printf( "\n" );
 	exit( 0 );
 }
 
+unsigned int lg_p_1 ( unsigned int k ) {
+	int i = 8;
+	int j = 0x00008000 * ( k <= 0xFFFF ) + 0x00010000 * ( k > 0xFFFF );
+	while ( i ) {
+		j >>= ( k < j ) * i;
+		j <<= ( k >= j ) * i;
+		i >>= 1;
+	}
+	return ( j + 0x80000000 * ( k >> 31 ) ) << 1;
+}
+
 // default file text
-static const char default_file[] = "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\nint main ( int argc, char** argv ) {\n\t\n\t\n\treturn 0;\n}";
+static const char* default_file[] = {
+	"#include <stdio.h>",
+	"#include <stdlib.h>",
+	"#include <string.h>",
+	"",
+	"int main ( int argc, char** argv ) {",
+		"\t",
+		"\t",
+		"\treturn 0;",
+	"}"
+};
+static int default_file_cs = 5;
 
 int main ( int argc, char* argv[] ) {
 	int child_pid = 0;
@@ -174,88 +237,104 @@ int main ( int argc, char* argv[] ) {
 		}
 	}
 
-// 	since it's only one buffer for the entire program, it's not really necessary to free since mem will get reclaimed anyways.
-	char* filebuf = malloc( BLOCK_S );
-	long unsigned int filesz = BLOCK_S;
-	bzero( filebuf, filesz );
-
-	int i = 0;
+	LOG( "LIN_S: %li", LIN_S );
 
 	printf( "note: because i'm lazy, don't return -1, 127, or 2 as these are reserved for common errors\n" );
 	printf( "note: ^Q will quit the program (and save if you have that enabled).\n" );
 	printf( "press a (printable) key to enter the 'editor'.\n" );
 
-	while ( getchar() != 0x11 ) {
+	int c = 0;
+	int cur_l = 0;
+	int tot_l = 0;
+	int posx = 0;
+	int xlim = 0;
+	int llim = 0;
+
+	while ( (c = getchar()) != 0x11 ) {
 // 		this clears stdin and is handy
 		if ( freopen( "/dev/tty", "rw", stdin ) == 0 )
 			ERR_QUIT( "reopening stdin failed" );
-		i++;
 // 		clear the screen
 		if ( system( "clear" ) != 0 )
 			ERR( "problems clearing screen" );
 
-		int amt = 0;
+		if ( (char)c == 's' ) {
+			template_selector = 0;
+		}
+		c = 0;
+
 // 		sets the default if applicable
 		if ( template_selector ) {
-			const char* tmplt;
+			const char** tmplt;
 // 			get the right template
 			switch ( template_selector ) {
+				default:
+					ERR( "template selector invalid warning" );
 				case 1:
 					tmplt = default_file;
-					amt = sizeof( default_file ) - 1;
+					tot_l = sizeof( default_file ) / sizeof( char* );
 					break;
 			}
-// 			print and store template in buffer, realloc if necessary
-			if ( amt > filesz ) {
-				int rem = amt % BLOCK_S;
-				filesz = rem + amt + BLOCK_S;
-				if ( !( filebuf = realloc( filebuf, filesz ) ) )
-					ERR_QUIT( "realloc failed" );
+// 			we first zero the entire structure if it exists
+			if ( lptrbuf ) {
+				for ( int i = 0; i < lptrbuf_s / sizeof( struct lin ); i++ ) {
+					bzero( lptrbuf[ i ].line, lptrbuf[ i ].size );
+					lptrbuf[ i ].chramt = 0;
+				}
 			}
-			memcpy( filebuf, tmplt, amt );
-			fwrite( tmplt, amt, 1, stdout );
+// 			we initially malloc the line structure, or realloc if it exists.
+			int new_sz = lg_p_1( tot_l * sizeof( struct lin ) );
+			RREALLOC( lptrbuf, lptrbuf_s, new_sz > lptrbuf_s ? new_sz : lptrbuf_s );
+			printf( "tot_l: %u, new_sz: %u, lptrbuf_s: %u\n", tot_l, new_sz, lptrbuf_s );
+// 			we then copy the lines into the structures
+			for ( int i = 0; i < tot_l; i++ ) {
+				int tmplnsz = strlen( tmplt[ i ] ) + 1;
+				lptrbuf[ i ].chramt = tmplnsz;
+				int nsz = lg_p_1( tmplnsz );
+				nsz = ( LINE_S > nsz ? LINE_S : nsz );
+				RREALLOC( lptrbuf[ i ].line, lptrbuf[ i ].size, nsz > lptrbuf[ i ].size ? nsz : lptrbuf[ i ].size );
+				memcpy( lptrbuf[ i ].line, tmplt[ i ], tmplnsz );
+				puts( lptrbuf[ i ].line );
+			}
 		}
 
+
 // 		a routimentary text editor
-		int c = 0;
-		int posx = 0;
-		int posy = 0;
+
+		llim = ( (lptrbuf_s >> 1) + (lptrbuf_s >> 2) );
+		xlim = ( (lptrbuf[ cur_l ].size >> 1) + (lptrbuf[ cur_l ].size >> 2) );
+
 		while ( (c = getchar()) != 0x04 && c != 0x11 ) {
-// 			realloc buffer if we're getting close to filling it
-			if ( amt >= filesz - 2 ) {
-				filesz += BLOCK_S;
-				if ( !( filebuf = realloc( filebuf, filesz ) ) ) {
-					c = -1; posx = -1;
-					break;
-				}
+// 			realloc buffers if we get beyond 3/4 close to filling them (sure not the most space efficient method, but does save reallocs and is fast).
+			if ( cur_l >= llim ) {
+				RREALLOC( lptrbuf, lptrbuf_s, lptrbuf_s << 1 );
+				llim = ( (lptrbuf_s >> 1) + (lptrbuf_s >> 2) );
+			}
+			if ( lptrbuf[ cur_l ].chramt >= xlim ) {
+				RREALLOC( lptrbuf[ cur_l ].line, lptrbuf[ cur_l ].size, lptrbuf[ cur_l ].size << 1 );
+				xlim = ( (lptrbuf[ cur_l ].size >> 1) + (lptrbuf[ cur_l ].size >> 2) );
 			}
 
-// 			bksp (don't want to bksp into buffer so amt > 0)
-			if ( (char)c == 0x7F ) {
-				if ( amt > 0 ) {
-					filebuf[ --amt ] = 0;
-					putchar( 0x08 );
-					putchar( ' ' );
-					putchar( 0x08 );
-				}
-			} else if ( (char)c == 0x1B ) {
-				putchar( 0x1B );
-				putchar( getchar() );
-				putchar( getchar() );
-				putchar( getchar() );
-			} else {
-				putchar( c );
-				filebuf[ amt++ ] = (char)c;
+			switch ( (char)c ) {
+				case 0x1B:
+					break;
+				case 0x08:
+					break;
+				case 0x0A:
+				case 0x0D:
+					break;
+				default:
+					putchar( c );
+					lptrbuf[ cur_l ].line[ posx++ ] = (char)c;
+					lptrbuf[ cur_l ].chramt++;
 			}
-			printf( "\ndebug: %X\n", c );
 		}
 
 		puts( "" );
 		if ( c == -1 && posx == -1 )
 			ERR( "realloc failed, saving what you have." );
 // 		save file
-		if ( fwrite( filebuf, amt, 1, itmp ) == 0 )
-			ERR_QUIT( "writing failed" );
+
 // 		if user entered ^Q in editor, we just quit without running
 		if ( c == 0x11 )
 			break;
