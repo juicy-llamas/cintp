@@ -47,17 +47,23 @@ printf( "LOG (file %s, line %i): " fmt "\n",						\
 
 // stub that wraps realloc
 #define RREALLOC( ptr, sz, nsz ) ({									\
-	printf( "RREALLOC: line = %i, sz = %i, nsz = %i\n", __LINE__, sz, nsz ); \
 	sz = nsz;														\
 	if ( !( ptr = realloc( ptr, sz ) ) )							\
 		ERR_QUIT( "mem broke" );									\
 })
 
 #define MMALLOC( ptr, sz, nsz ) ({									\
-	printf( "MMALLOC: line = %i, sz = %i, nsz = %i\n", __LINE__, sz, nsz ); \
 	sz = nsz;														\
 	if ( !( ptr = realloc( ptr, sz ) ) )							\
 		ERR_QUIT( "mem broke" );									\
+})
+
+#define PARR( ptr, sz ) ({											\
+	printf( "line %i: [ ", __LINE__ );								\
+	for ( int i = 0; i < sz-1; i++ ) {								\
+		printf( "%02X, ", *( (unsigned char*)ptr + i ) );			\
+	}																\
+	printf( "%02X ]\n", *( (unsigned char*)ptr + sz - 1 ) );		\
 })
 
 struct lin {
@@ -99,6 +105,80 @@ void cleanup () {
 
 	printf( "\n" );
 	exit( 0 );
+}
+
+void escape_seq ( char* seq ) {
+	putchar( 0x1B );
+	putchar( '[' );
+	while ( *seq )
+		putchar( *(seq++) );
+}
+
+// ofc x and y are under 999
+void plop_cursor ( int x, int y ) {
+	char cx[ 3 ] = {0};
+	char cy[ 3 ] = {0};
+	int i = 0;
+	if ( x > 999 || y > 999 )
+		ERR_QUIT( "bug; inputs to plop_cursor exceed max value" );
+
+	printf( "x: %i, y: %i\n", x, y );
+
+	do {
+		cx[ 2-i ] = '0' + (x % 10);
+		x /= 10;
+		i++;
+	} while ( x && i < 3 );
+	int j = 0;
+	do {
+		cy[ 2-j ] = '0' + (y % 10);
+		y /= 10;
+		j++;
+	} while ( y && j < 3 );
+
+	PARR( cx, 3 );
+	PARR( cy, 3 );
+
+	char escseq[ 9 ] = {0};
+	memcpy( escseq, cy+3-j, j );
+
+	PARR( escseq, 8 );
+
+	escseq[ j ] = ';';
+
+	PARR( escseq, 8 );
+
+	memcpy( escseq+j+1, cx+3-i, i );
+
+	PARR( escseq, 8 );
+
+	escseq[ j+i+1 ] = 'H';
+	escseq[ j+i+2 ] = 0;
+
+	PARR( escseq, 8 );
+
+// 	escape_seq( escseq );
+}
+
+
+// position cursor just x dir
+void off_cursor ( int x ) {
+	char cx[ 3 ];
+	char escseq[ 5 ];
+	int i = 0;
+	if ( x > 999 )
+		ERR_QUIT( "bug; inputs to plop_cursor exceed max value" );
+
+	do {
+		cx[ 2-i ] = '0' + (x % 10);
+		x /= 10;
+		i++;
+	} while ( x && i < 3 );
+
+	memcpy( escseq, cx+3-i, i );
+	escseq[ i ] = 'G';
+	escseq[ i+1 ] = 0;
+	escape_seq( escseq );
 }
 
 unsigned int lg_p_1 ( unsigned int k ) {
@@ -249,6 +329,7 @@ int main ( int argc, char* argv[] ) {
 	int posx = 0;
 	int xlim = 0;
 	int llim = 0;
+	int scr_l = 0;
 
 	while ( (c = getchar()) != 0x11 ) {
 // 		this clears stdin and is handy
@@ -272,6 +353,7 @@ int main ( int argc, char* argv[] ) {
 					ERR( "template selector invalid warning" );
 				case 1:
 					tmplt = default_file;
+					cur_l = default_file_cs;
 					tot_l = sizeof( default_file ) / sizeof( char* );
 					break;
 			}
@@ -285,30 +367,38 @@ int main ( int argc, char* argv[] ) {
 // 			we initially malloc the line structure, or realloc if it exists.
 			int new_sz = lg_p_1( tot_l * sizeof( struct lin ) );
 			RREALLOC( lptrbuf, lptrbuf_s, new_sz > lptrbuf_s ? new_sz : lptrbuf_s );
-			printf( "tot_l: %u, new_sz: %u, lptrbuf_s: %u\n", tot_l, new_sz, lptrbuf_s );
+			bzero( lptrbuf, lptrbuf_s );
+// 			printf( "tot_l: %u, new_sz: %u, lptrbuf_s: %u\n", tot_l, new_sz, lptrbuf_s );
 // 			we then copy the lines into the structures
 			for ( int i = 0; i < tot_l; i++ ) {
 				int tmplnsz = strlen( tmplt[ i ] ) + 1;
-				lptrbuf[ i ].chramt = tmplnsz;
+				lptrbuf[ i ].chramt = tmplnsz - 1;
 				int nsz = lg_p_1( tmplnsz );
 				nsz = ( LINE_S > nsz ? LINE_S : nsz );
 				RREALLOC( lptrbuf[ i ].line, lptrbuf[ i ].size, nsz > lptrbuf[ i ].size ? nsz : lptrbuf[ i ].size );
 				memcpy( lptrbuf[ i ].line, tmplt[ i ], tmplnsz );
 				puts( lptrbuf[ i ].line );
+				posx = ( i == cur_l ) * lptrbuf[ i ].chramt;
 			}
 		}
 
 
 // 		a routimentary text editor
 
-		llim = ( (lptrbuf_s >> 1) + (lptrbuf_s >> 2) );
+		llim = ( (lptrbuf_s >> 1) + (lptrbuf_s >> 2) ) / sizeof( struct lin );
 		xlim = ( (lptrbuf[ cur_l ].size >> 1) + (lptrbuf[ cur_l ].size >> 2) );
+		scr_l = 0;
+		int posmax = 0;
+
+		plop_cursor( 900, 42 );
+		plop_cursor( 0, 678 );
+		plop_cursor( cur_l, posx );
 
 		while ( (c = getchar()) != 0x04 && c != 0x11 ) {
 // 			realloc buffers if we get beyond 3/4 close to filling them (sure not the most space efficient method, but does save reallocs and is fast).
-			if ( cur_l >= llim ) {
+			if ( tot_l >= llim ) {
 				RREALLOC( lptrbuf, lptrbuf_s, lptrbuf_s << 1 );
-				llim = ( (lptrbuf_s >> 1) + (lptrbuf_s >> 2) );
+				llim = ( (lptrbuf_s >> 1) + (lptrbuf_s >> 2) ) / sizeof( struct lin );
 			}
 			if ( lptrbuf[ cur_l ].chramt >= xlim ) {
 				RREALLOC( lptrbuf[ cur_l ].line, lptrbuf[ cur_l ].size, lptrbuf[ cur_l ].size << 1 );
@@ -317,24 +407,160 @@ int main ( int argc, char* argv[] ) {
 
 			switch ( (char)c ) {
 				case 0x1B:
+					if ( getchar() == '[' ) {
+						int tmp = getchar();
+						posmax = posx * ( tmp != 'A' && tmp != 'B' );
+						switch( tmp ) {
+							case 'A':
+// 								puts( "UP KEY" );
+								if ( cur_l > 0 ) {
+									cur_l--;
+									posx = ( posmax - lptrbuf[ cur_l ].chramt ) *
+											( posmax < lptrbuf[ cur_l ].chramt ) +
+											lptrbuf[ cur_l ].chramt;
+									escape_seq( "F" );
+									off_cursor( posx );
+								}
+								break;
+							case 'B':
+// 								puts( "DOWN KEY" );
+								if ( cur_l < tot_l-1 ) {
+									cur_l++;
+									posx = ( posmax - lptrbuf[ cur_l ].chramt ) *
+											( posmax < lptrbuf[ cur_l ].chramt ) +
+											lptrbuf[ cur_l ].chramt;
+									escape_seq( "E" );
+									off_cursor( posx );
+								}
+								break;
+							case 'C':
+// 								puts( "RIGHT KEY" );
+								if ( posx < lptrbuf[ cur_l ].chramt-1 ) {
+									posx++;
+									escape_seq( "C" );
+								}
+								break;
+							case 'D':
+// 								puts( "LEFT KEY" );
+								if ( posx > 0 ) {
+									posx--;
+									escape_seq( "D" );
+								}
+								break;
+							case 'H':
+// 								puts( "HOME KEY" );
+								posx = 0;
+// 								set cursor pos
+								char escseq[ 7 ];
+								int term_l = cur_l - scr_l;
+								escseq[ 0 ] = '0'; escseq[ 1 ] = ';';
+
+								escseq[ 6 ] = 0;
+								escape_seq( escseq );
+								break;
+							case 'F':
+								puts( "END KEY" );
+								break;
+							case '3':
+								if ( getchar() == '~' ) {
+// 									puts( "DEL KEY" );
+// 									same as bksp but doesn't decrement posx
+									for ( int i = posx; i < lptrbuf[ cur_l ].chramt - 1; i++ ) {
+										lptrbuf[ cur_l ].line[ i ] = lptrbuf[ cur_l ].line[ i+1 ];
+									}
+									lptrbuf[ cur_l ].line[ lptrbuf[ cur_l ].chramt - 1 ] = 1;
+									lptrbuf[ cur_l ].chramt--;
+								}
+								break;
+							case '5':
+								if ( getchar() == '~' ) {
+									puts( "PGUP KEY" );
+								}
+								break;
+							case '6':
+								if ( getchar() == '~' ) {
+									puts( "PGDN KEY" );
+								}
+								break;
+						}
+					}
 					break;
-				case 0x08:
+				case 0x7F:
+// 					puts( "BKSP" );
+// 					if there are chars in front of us, we move them LEFT, overwriting the char in posx-1
+					if ( posx > 0 ) {
+						for ( int i = --posx; i < lptrbuf[ cur_l ].chramt - 1; i++ ) {
+							lptrbuf[ cur_l ].line[ i ] = lptrbuf[ cur_l ].line[ i+1 ];
+						}
+						lptrbuf[ cur_l ].line[ lptrbuf[ cur_l ].chramt - 1 ] = 1;
+						lptrbuf[ cur_l ].chramt--;
+	// 					print bksp
+						putchar( c );
+						printf( "%s", ( lptrbuf[ cur_l ].line + posx ) );
+					} else if ( cur_l > 0 ) {
+						free( lptrbuf[ cur_l ].line );
+						for ( int i = tot_l-1; i > cur_l; i-- ) {
+							lptrbuf[ i ].line = lptrbuf[ i+1 ].line;
+							lptrbuf[ i ].chramt = lptrbuf[ i+1 ].chramt;
+							lptrbuf[ i ].size = lptrbuf[ i+1 ].size;
+						}
+					}
+// 					printf( "cur_l: %i, posx: %i, line: '%s'\n", cur_l, posx, lptrbuf[ cur_l ].line );
 					break;
 				case 0x0A:
 				case 0x0D:
+// 					shift all lines in file up, then clear the next line for a new one.
+					for ( int i = tot_l-1; i > cur_l; i-- ) {
+						lptrbuf[ i+1 ].line = lptrbuf[ i ].line;
+						lptrbuf[ i+1 ].chramt = lptrbuf[ i ].chramt;
+						lptrbuf[ i+1 ].size = lptrbuf[ i ].size;
+					}
+					cur_l++;
+					tot_l++;
+					lptrbuf[ cur_l ].line = 0;
+					lptrbuf[ cur_l ].chramt = 0;
+					lptrbuf[ cur_l ].size = 0;
+// 					malloc the correct size, move the little bit after the cursor into the next line (malloc so new line can hold this), and delete that bit from the prev line
+					int sz = lptrbuf[ cur_l-1 ].chramt - posx;
+					MMALLOC( lptrbuf[ cur_l ].line, lptrbuf[ cur_l ].size, lg_p_1( sz ) );
+					memcpy( lptrbuf[ cur_l ].line, lptrbuf[ cur_l-1 ].line + posx, sz );
+					bzero( lptrbuf[ cur_l-1 ].line + posx, sz );
+					lptrbuf[ cur_l-1 ].chramt -= sz;
+					lptrbuf[ cur_l ].chramt = sz;
+//					zero posx, clear text below us, and insert a new line
+					posx = 0;
+					escape_seq( "J" );
+					putchar( 0x0A );
+					escape_seq( "s" );
+					for ( int i = cur_l; i < tot_l; i++ )
+						puts( lptrbuf[ i ].line );
+					escape_seq( "u" );
+
 					break;
 				default:
-					putchar( c );
+// 					if there are chars in front of us, we move them one to the right.
+					for ( int i = lptrbuf[ cur_l ].chramt - 1; i >= posx; i-- ) {
+						lptrbuf[ cur_l ].line[ i+1 ] = lptrbuf[ cur_l ].line[ i ];
+					}
 					lptrbuf[ cur_l ].line[ posx++ ] = (char)c;
 					lptrbuf[ cur_l ].chramt++;
+// 					remove part after cursor
+					escape_seq( "K" );
+					putchar( c );
+// 					printf( "cur_l: %i, posx: %i, line: '%s'\n", cur_l, posx, lptrbuf[ cur_l ].line );
 			}
+
+			posmax = posx * ( c != 0x1B );
 		}
 
 		puts( "" );
 		if ( c == -1 && posx == -1 )
 			ERR( "realloc failed, saving what you have." );
 // 		save file
-
+		for ( int i = 0; lptrbuf[ i ].line != 0; i++ ) {
+			fwrite( lptrbuf[ i ].line, lptrbuf[ i ].chramt, 1, itmp );
+			fputc( '\n', itmp );
+		}
 // 		if user entered ^Q in editor, we just quit without running
 		if ( c == 0x11 )
 			break;
