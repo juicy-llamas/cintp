@@ -115,14 +115,15 @@ void escape_seq ( char* seq ) {
 }
 
 // ofc x and y are under 999
-void plop_cursor ( int x, int y ) {
+void plop_cursor ( int y, int x ) {
+	x++; y++;
 	char cx[ 3 ] = {0};
 	char cy[ 3 ] = {0};
 	int i = 0;
 	if ( x > 999 || y > 999 )
 		ERR_QUIT( "bug; inputs to plop_cursor exceed max value" );
 
-	printf( "x: %i, y: %i\n", x, y );
+// 	printf( "x: %i, y: %i\n", x, y );
 
 	do {
 		cx[ 2-i ] = '0' + (x % 10);
@@ -136,28 +137,28 @@ void plop_cursor ( int x, int y ) {
 		j++;
 	} while ( y && j < 3 );
 
-	PARR( cx, 3 );
-	PARR( cy, 3 );
+// 	PARR( cx, 3 );
+// 	PARR( cy, 3 );
 
 	char escseq[ 9 ] = {0};
 	memcpy( escseq, cy+3-j, j );
 
-	PARR( escseq, 8 );
+// 	PARR( escseq, 8 );
 
 	escseq[ j ] = ';';
 
-	PARR( escseq, 8 );
+// 	PARR( escseq, 8 );
 
 	memcpy( escseq+j+1, cx+3-i, i );
 
-	PARR( escseq, 8 );
+// 	PARR( escseq, 8 );
 
 	escseq[ j+i+1 ] = 'H';
 	escseq[ j+i+2 ] = 0;
 
-	PARR( escseq, 8 );
+// 	PARR( escseq, 8 );
 
-// 	escape_seq( escseq );
+	escape_seq( escseq );
 }
 
 
@@ -166,6 +167,7 @@ void off_cursor ( int x ) {
 	char cx[ 3 ];
 	char escseq[ 5 ];
 	int i = 0;
+	x++;
 	if ( x > 999 )
 		ERR_QUIT( "bug; inputs to plop_cursor exceed max value" );
 
@@ -327,6 +329,7 @@ int main ( int argc, char* argv[] ) {
 	int cur_l = 0;
 	int tot_l = 0;
 	int posx = 0;
+	int curx = 0;
 	int xlim = 0;
 	int llim = 0;
 	int scr_l = 0;
@@ -378,7 +381,7 @@ int main ( int argc, char* argv[] ) {
 				RREALLOC( lptrbuf[ i ].line, lptrbuf[ i ].size, nsz > lptrbuf[ i ].size ? nsz : lptrbuf[ i ].size );
 				memcpy( lptrbuf[ i ].line, tmplt[ i ], tmplnsz );
 				puts( lptrbuf[ i ].line );
-				posx = ( i == cur_l ) * lptrbuf[ i ].chramt;
+				posx = posx + ( i == cur_l ) * lptrbuf[ i ].chramt;
 			}
 		}
 
@@ -390,8 +393,6 @@ int main ( int argc, char* argv[] ) {
 		scr_l = 0;
 		int posmax = 0;
 
-		plop_cursor( 900, 42 );
-		plop_cursor( 0, 678 );
 		plop_cursor( cur_l, posx );
 
 		while ( (c = getchar()) != 0x04 && c != 0x11 ) {
@@ -492,18 +493,33 @@ int main ( int argc, char* argv[] ) {
 						for ( int i = --posx; i < lptrbuf[ cur_l ].chramt - 1; i++ ) {
 							lptrbuf[ cur_l ].line[ i ] = lptrbuf[ cur_l ].line[ i+1 ];
 						}
-						lptrbuf[ cur_l ].line[ lptrbuf[ cur_l ].chramt - 1 ] = 1;
+						lptrbuf[ cur_l ].line[ lptrbuf[ cur_l ].chramt - 1 ] = 0;
 						lptrbuf[ cur_l ].chramt--;
 	// 					print bksp
-						putchar( c );
+						escape_seq( "D" );
+						escape_seq( "K" );
+						escape_seq( "s" );
 						printf( "%s", ( lptrbuf[ cur_l ].line + posx ) );
+						escape_seq( "u" );
 					} else if ( cur_l > 0 ) {
+						if ( lptrbuf[ cur_l ].chramt + lptrbuf[ cur_l-1 ].chramt > lptrbuf[ cur_l-1 ].size )
+							RREALLOC( lptrbuf[ cur_l-1 ].line, lptrbuf[ cur_l-1 ].size,
+									  lg_p_1( lptrbuf[ cur_l ].chramt + lptrbuf[ cur_l-1 ].chramt ) );
+						strncpy( lptrbuf[ cur_l-1 ].line + lptrbuf[ cur_l-1 ].chramt, lptrbuf[ cur_l ].line, lptrbuf[ cur_l ].chramt );
 						free( lptrbuf[ cur_l ].line );
-						for ( int i = tot_l-1; i > cur_l; i-- ) {
+// 						printf( "curl = %i\n", cur_l );
+						lptrbuf[ cur_l ].line = 0;
+						for ( int i = cur_l; i < tot_l-2; i++ ) {
 							lptrbuf[ i ].line = lptrbuf[ i+1 ].line;
 							lptrbuf[ i ].chramt = lptrbuf[ i+1 ].chramt;
 							lptrbuf[ i ].size = lptrbuf[ i+1 ].size;
 						}
+						cur_l--; tot_l--;
+						escape_seq( "J" );
+						escape_seq( "s" );
+						for ( int i = cur_l+1; i < tot_l; i++ )
+							puts( lptrbuf[ i ].line );
+						escape_seq( "u" );
 					}
 // 					printf( "cur_l: %i, posx: %i, line: '%s'\n", cur_l, posx, lptrbuf[ cur_l ].line );
 					break;
@@ -535,7 +551,6 @@ int main ( int argc, char* argv[] ) {
 					for ( int i = cur_l; i < tot_l; i++ )
 						puts( lptrbuf[ i ].line );
 					escape_seq( "u" );
-
 					break;
 				default:
 // 					if there are chars in front of us, we move them one to the right.
@@ -547,6 +562,9 @@ int main ( int argc, char* argv[] ) {
 // 					remove part after cursor
 					escape_seq( "K" );
 					putchar( c );
+					escape_seq( "s" );
+					printf( "%s", lptrbuf[ cur_l ].line + posx );
+					escape_seq( "u" );
 // 					printf( "cur_l: %i, posx: %i, line: '%s'\n", cur_l, posx, lptrbuf[ cur_l ].line );
 			}
 

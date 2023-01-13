@@ -1,0 +1,2 @@
+FATAL ERROR (file god_dammit_i_hate_coding.c, line 218): bug; inputs to plop_cursor exceed max value: Inappropriate ioctl for device
+free(): double free detected in tcache 2
